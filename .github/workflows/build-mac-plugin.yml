@@ -14,7 +14,7 @@ permissions:
 jobs:
   build-macos:
     name: Build Universal macOS AU & VST3
-    runs-on: macos-14 # Native Apple Silicon M-series runner on GitHub
+    runs-on: macos-14
 
     steps:
       - name: Checkout Code
@@ -26,7 +26,6 @@ jobs:
         run: |
           echo "=== Checking repository root files ==="
           ls -la
-          # 如果拖拽时把文件放在了子目录，自动平铺到根目录
           if [ ! -f "CMakeLists.txt" ]; then
             CMAKEDIR=$(find . -maxdepth 3 -name "CMakeLists.txt" -not -path "*/.*" | head -n 1)
             if [ -n "$CMAKEDIR" ]; then
@@ -36,13 +35,11 @@ jobs:
             fi
           fi
           if [ ! -f "CMakeLists.txt" ]; then
-            echo "::error::CMakeLists.txt not found! Please check if CMakeLists.txt was uploaded to the repository."
+            echo "::error::CMakeLists.txt not found!"
             exit 1
           fi
-          # 自动热修补：将 CMakeLists.txt 中的 10.9 改为 11.0，防止 Apple Silicon arm64 编译器报错
+          # 自动热修补 deployment target
           sed -i '' 's/10\.9/11\.0/g' CMakeLists.txt 2>/dev/null || sed -i 's/10\.9/11\.0/g' CMakeLists.txt 2>/dev/null || true
-          echo "=== Verified CMakeLists.txt deployment target ==="
-          grep -n "CMAKE_OSX" CMakeLists.txt || true
 
       - name: Install Ninja Build Tool
         run: brew install ninja || true
@@ -56,7 +53,7 @@ jobs:
 
       - name: Build AU, VST3 and Standalone
         run: |
-          cmake --build build --config Release --parallel
+          cmake --build build --config Release --parallel || cmake --build build --config Release -j 1 --verbose
 
       - name: Verify Universal Architecture with lipo
         run: |
@@ -77,31 +74,15 @@ jobs:
         run: |
           mkdir -p dist/OneKnobOpto-macOS-Universal/AU
           mkdir -p dist/OneKnobOpto-macOS-Universal/VST3
-          
-          # 智能匹配产物位置，避免硬编码路径报错
           find build -name "OneKnobOpto.component" -exec cp -R {} dist/OneKnobOpto-macOS-Universal/AU/ \;
           find build -name "OneKnobOpto.vst3" -exec cp -R {} dist/OneKnobOpto-macOS-Universal/VST3/ \;
-          
           cp install_mac_plugins.sh dist/OneKnobOpto-macOS-Universal/ || true
           cp README.md dist/OneKnobOpto-macOS-Universal/ || true
-          
           cd dist
           zip -r ../OneKnobOpto-macOS-Universal.zip OneKnobOpto-macOS-Universal/
-          echo "=== Packaged content ==="
-          unzip -l ../OneKnobOpto-macOS-Universal.zip
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
           name: OneKnobOpto-macOS-Universal
           path: OneKnobOpto-macOS-Universal.zip
-
-      - name: Create GitHub Release (Triggered on v* Tag)
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: OneKnobOpto-macOS-Universal.zip
-          title: Release ${{ github.ref_name }} - Mac AU & VST3 Universal Plugins
-          draft: false
-          prerelease: false
-          generate_release_notes: true
