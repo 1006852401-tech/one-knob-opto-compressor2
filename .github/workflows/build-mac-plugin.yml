@@ -19,20 +19,33 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.28.x'
+      - name: Auto-detect Project Directory Structure
+        run: |
+          echo "=== Checking repository root files ==="
+          ls -la
+          # If files were uploaded inside a subfolder, bring them to root
+          if [ ! -f "CMakeLists.txt" ]; then
+            CMAKEDIR=$(find . -maxdepth 3 -name "CMakeLists.txt" -not -path "*/.*" | head -n 1)
+            if [ -n "$CMAKEDIR" ]; then
+              SRC_DIR=$(dirname "$CMAKEDIR")
+              echo "==> Moving files from subfolder $SRC_DIR to root..."
+              cp -R "$SRC_DIR"/* .
+            fi
+          fi
+          if [ ! -f "CMakeLists.txt" ]; then
+            echo "::error::CMakeLists.txt not found! Please ensure CMakeLists.txt and Source/ folder are uploaded."
+            exit 1
+          fi
 
       - name: Install Ninja Build Tool
-        run: brew install ninja
+        run: brew install ninja || true
 
-      - name: "Configure CMake (Universal Binary arm64 + x86_64, macOS 10.9+)"
+      - name: "Configure CMake (Universal Binary: arm64 + x86_64, macOS 11.0+)"
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET="10.9"
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="11.0"
 
       - name: Build AU, VST3 and Standalone
         run: |
