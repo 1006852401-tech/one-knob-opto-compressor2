@@ -11,7 +11,7 @@ on:
 jobs:
   build-macos:
     name: Build Universal macOS AU & VST3
-    runs-on: macos-14 # GitHub 官方原生 Apple Silicon (M系列) 云主机
+    runs-on: macos-14 # Native Apple Silicon M-series runner on GitHub
 
     steps:
       - name: Checkout Code
@@ -27,7 +27,7 @@ jobs:
       - name: Install Ninja Build Tool
         run: brew install ninja
 
-      - name: Configure CMake (Universal Binary: arm64 + x86_64, Deployment Target 10.9+)
+      - name: "Configure CMake (Universal Binary arm64 + x86_64, macOS 10.9+)"
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
