@@ -8,6 +8,9 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-macos:
     name: Build Universal macOS AU & VST3
@@ -19,11 +22,11 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Auto-detect Project Directory Structure
+      - name: Auto-detect Project Directory Structure and Patch Settings
         run: |
           echo "=== Checking repository root files ==="
           ls -la
-          # If files were uploaded inside a subfolder, bring them to root
+          # 如果拖拽时把文件放在了子目录，自动平铺到根目录
           if [ ! -f "CMakeLists.txt" ]; then
             CMAKEDIR=$(find . -maxdepth 3 -name "CMakeLists.txt" -not -path "*/.*" | head -n 1)
             if [ -n "$CMAKEDIR" ]; then
@@ -33,9 +36,13 @@ jobs:
             fi
           fi
           if [ ! -f "CMakeLists.txt" ]; then
-            echo "::error::CMakeLists.txt not found! Please ensure CMakeLists.txt and Source/ folder are uploaded."
+            echo "::error::CMakeLists.txt not found! Please check if CMakeLists.txt was uploaded to the repository."
             exit 1
           fi
+          # 自动热修补：将 CMakeLists.txt 中的 10.9 改为 11.0，防止 Apple Silicon arm64 编译器报错
+          sed -i '' 's/10\.9/11\.0/g' CMakeLists.txt 2>/dev/null || sed -i 's/10\.9/11\.0/g' CMakeLists.txt 2>/dev/null || true
+          echo "=== Verified CMakeLists.txt deployment target ==="
+          grep -n "CMAKE_OSX" CMakeLists.txt || true
 
       - name: Install Ninja Build Tool
         run: brew install ninja || true
@@ -53,21 +60,35 @@ jobs:
 
       - name: Verify Universal Architecture with lipo
         run: |
-          echo "=== AU Component Architecture ==="
-          lipo -info build/OneKnobOpto_artefacts/Release/AU/OneKnobOpto.component/Contents/MacOS/OneKnobOpto || true
-          echo "=== VST3 Architecture ==="
-          lipo -info build/OneKnobOpto_artefacts/Release/VST3/OneKnobOpto.vst3/Contents/MacOS/OneKnobOpto || true
+          echo "=== Searching for built plugins ==="
+          find build -name "*.component" -o -name "*.vst3"
+          AU_BIN=$(find build -name "OneKnobOpto" -path "*component*" | head -n 1)
+          VST_BIN=$(find build -name "OneKnobOpto" -path "*vst3*" | head -n 1)
+          if [ -n "$AU_BIN" ]; then
+            echo "=== AU Component Architecture ==="
+            lipo -info "$AU_BIN" || true
+          fi
+          if [ -n "$VST_BIN" ]; then
+            echo "=== VST3 Architecture ==="
+            lipo -info "$VST_BIN" || true
+          fi
 
       - name: Package Plugins for Distribution
         run: |
           mkdir -p dist/OneKnobOpto-macOS-Universal/AU
           mkdir -p dist/OneKnobOpto-macOS-Universal/VST3
-          cp -R build/OneKnobOpto_artefacts/Release/AU/OneKnobOpto.component dist/OneKnobOpto-macOS-Universal/AU/
-          cp -R build/OneKnobOpto_artefacts/Release/VST3/OneKnobOpto.vst3 dist/OneKnobOpto-macOS-Universal/VST3/
+          
+          # 智能匹配产物位置，避免硬编码路径报错
+          find build -name "OneKnobOpto.component" -exec cp -R {} dist/OneKnobOpto-macOS-Universal/AU/ \;
+          find build -name "OneKnobOpto.vst3" -exec cp -R {} dist/OneKnobOpto-macOS-Universal/VST3/ \;
+          
           cp install_mac_plugins.sh dist/OneKnobOpto-macOS-Universal/ || true
           cp README.md dist/OneKnobOpto-macOS-Universal/ || true
+          
           cd dist
           zip -r ../OneKnobOpto-macOS-Universal.zip OneKnobOpto-macOS-Universal/
+          echo "=== Packaged content ==="
+          unzip -l ../OneKnobOpto-macOS-Universal.zip
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
